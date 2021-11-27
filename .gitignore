@@ -1,0 +1,7 @@
+exp/
+input/
+__pycache__
+
+
+*.out
+*.csv
