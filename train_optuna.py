@@ -37,7 +37,7 @@ def train(
 
     model_instance = Model(model_config, verbose=True)
     model_path = os.path.join(log_dir, "best.pt")
-    print(f"Model save path: {model_path}")
+    # print(f"Model save path: {model_path}")
     if os.path.isfile(model_path):
         model_instance.model.load_state_dict(
             torch.load(model_path, map_location=device)
@@ -48,15 +48,17 @@ def train(
     train_dl, val_dl, test_dl = create_dataloader(data_config)
 
     # Create optimizer, scheduler, criterion
-    optimizer = torch.optim.SGD(
-        model_instance.model.parameters(), lr=data_config["INIT_LR"], momentum=0.9
+    optimizer = torch.optim.Adam(
+        model_instance.model.parameters(), lr=data_config["INIT_LR"]
     )
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    scheduler = torch.optim.lr_scheduler.CyclicLR(
         optimizer=optimizer,
-        max_lr=data_config["INIT_LR"],
-        steps_per_epoch=len(train_dl),
-        epochs=data_config["EPOCHS"],
-        pct_start=0.05,
+        base_lr=1e-5,
+        max_lr=0.1,
+        step_size_up=10,
+        step_size_down=None,
+        cycle_momentum=False,
+        mode='triangular2',
     )
     criterion = CustomCriterion(
         samples_per_cls=get_label_counts(data_config["DATA_PATH"])
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model.")
     parser.add_argument(
         "--model",
-        default="configs/model/mobilenetv3.yaml",
+        default="configs/model/example.yaml",
         type=str,
         help="model config",
     )
