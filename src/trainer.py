@@ -110,6 +110,7 @@ class TorchTrainer:
 
     def train(
         self,
+        trial,
         train_dataloader: DataLoader,
         n_epoch: int,
         val_dataloader: Optional[DataLoader] = None,
@@ -175,6 +176,7 @@ class TorchTrainer:
             _, test_f1, test_acc = self.test(
                 model=self.model, test_dataloader=val_dataloader
             )
+            trial.report(test_f1, epoch)
             if best_test_f1 > test_f1:
                 continue
             best_test_acc = test_acc

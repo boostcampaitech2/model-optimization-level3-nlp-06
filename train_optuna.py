@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
+import optuna
 
 from src.dataloader import create_dataloader
 from src.loss import CustomCriterion
@@ -20,9 +21,54 @@ from src.trainer import TorchTrainer
 from src.utils.common import get_label_counts, read_yaml
 from src.utils.torch_utils import check_runtime, model_info
 
+class ConvNets(nn.Module):
+    def __init__(self, trial):
+        super().__init__()
+        self.layer = self.define_model(trial)
+        self.in_features = None
+        self.in_channel = None
+        #self.out_layer = self.output_model(trial)
+
+    def define_model(self, trial):
+        n_layers = trial.suggest_int("n_layers", 1, 2)
+        layers = []
+        self.in_features = 224
+        self.in_channel = 3
+
+        for i in range(n_layers):
+            out_channel = trial.suggest_int(f"conv_c{i}", 3, 128),
+            kernel_size = trial.suggest_int(f"conv_k{i}", 3, 5)
+            stride = trial.suggest_int(f"conv_s{i}", 1, 2)
+            padding = trial.suggest_int(f"conv_p{i}", 0, 2)
+            layers.append(nn.Conv2d(self.in_channel, out_channel[0], kernel_size, stride, padding))
+            layers.append(nn.BatchNorm2d(out_channel[0]))
+            layers.append(nn.ReLU())
+            layers.append(nn.MaxPool2d(kernel_size=2,stride=2))
+
+            out_features = (self.in_features - kernel_size + 2*padding) // (stride) + 1
+            out_features = out_features // 2
+            print(f"conv_layer_{i}:", self.in_channel, out_channel, self.in_features, out_features, kernel_size, stride, padding)
+            self.in_features = out_features
+            self.in_channel = out_channel[0]
+
+        print('pow(self.in_features,2)* self.in_channel:',pow(self.in_features,2)* self.in_channel)
+        layers.append(nn.Flatten())
+        p = trial.suggest_float("dropout_l{}".format(i), 0.0, 0.5)
+        layers.append(nn.Linear(pow(self.in_features,2)* self.in_channel, 1000))
+        layers.append(nn.Dropout(p))
+        layers.append(nn.Linear(1000, 6))
+        layers.append(nn.LogSoftmax(dim=1))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.layer(x)
+        return x
+
+
 
 def train(
-    model_config: Dict[str, Any],
+    trial,
+    #model_config: Dict[str, Any],
     data_config: Dict[str, Any],
     log_dir: str,
     fp16: bool,
@@ -32,31 +78,38 @@ def train(
     # save model_config, data_config
     with open(os.path.join(log_dir, "data.yml"), "w") as f:
         yaml.dump(data_config, f, default_flow_style=False)
-    with open(os.path.join(log_dir, "model.yml"), "w") as f:
-        yaml.dump(model_config, f, default_flow_style=False)
+    # with open(os.path.join(log_dir, "model.yml"), "w") as f:
+    #     yaml.dump(model_config, f, default_flow_style=False)
 
-    model_instance = Model(model_config, verbose=True)
+    # model_instance = Model(model_config, verbose=True)
     model_path = os.path.join(log_dir, "best.pt")
-    print(f"Model save path: {model_path}")
-    if os.path.isfile(model_path):
-        model_instance.model.load_state_dict(
-            torch.load(model_path, map_location=device)
-        )
-    model_instance.model.to(device)
+    # print(f"Model save path: {model_path}")
+    #if os.path.isfile(model_path):
+    #    model_instance.model.load_state_dict(
+    #       torch.load(model_path, map_location=device)
+    #    )
+    #model_instance.model.to(device)
 
+    model  = ConvNets(trial).to(device)
     # Create dataloader
     train_dl, val_dl, test_dl = create_dataloader(data_config)
 
     # Create optimizer, scheduler, criterion
-    optimizer = torch.optim.SGD(
-        model_instance.model.parameters(), lr=data_config["INIT_LR"], momentum=0.9
+    #optimizer_name = trial.suggest_categorical("opmizer", ["Adam", "RMSprop", "SGD"])
+    #lr = trial.suggest_float("lr", 1e-5, data_config["INIT_LR"])
+    #optimizer = getattr(optim, optimizer_name)(model_instance.model.parameters(), lr=lr)
+    
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=data_config["INIT_LR"]
     )
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    scheduler = torch.optim.lr_scheduler.CyclicLR(
         optimizer=optimizer,
-        max_lr=data_config["INIT_LR"],
-        steps_per_epoch=len(train_dl),
-        epochs=data_config["EPOCHS"],
-        pct_start=0.05,
+        base_lr=1e-5,
+        max_lr=1e-3,
+        step_size_up=5,
+        step_size_down=None,
+        cycle_momentum=False,
+        mode='triangular2',
     )
     criterion = CustomCriterion(
         samples_per_cls=get_label_counts(data_config["DATA_PATH"])
@@ -71,7 +124,7 @@ def train(
 
     # Create trainer
     trainer = TorchTrainer(
-        model=model_instance.model,
+        model=model,
         criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
@@ -81,15 +134,16 @@ def train(
         verbose=1,
     )
     best_acc, best_f1 = trainer.train(
+        trial,
         train_dataloader=train_dl,
         n_epoch=data_config["EPOCHS"],
         val_dataloader=val_dl if val_dl else test_dl,
     )
 
     # evaluate model with test set
-    model_instance.model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path))
     test_loss, test_f1, test_acc = trainer.test(
-        model=model_instance.model, test_dataloader=val_dl if val_dl else test_dl
+        model=model, test_dataloader=val_dl if val_dl else test_dl
     )
     return test_loss, test_f1, test_acc
 
@@ -98,7 +152,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model.")
     parser.add_argument(
         "--model",
-        default="configs/model/mobilenetv3.yaml",
+        default="configs/model/example.yaml",
         type=str,
         help="model config",
     )
@@ -122,11 +176,16 @@ if __name__ == "__main__":
 
     os.makedirs(log_dir, exist_ok=True)
 
-    test_loss, test_f1, test_acc = train(
-        model_config=model_config,
-        data_config=data_config,
-        log_dir=log_dir,
-        fp16=data_config["FP16"],
-        device=device,
-    )
+    def objective(trial):
+        test_loss, test_f1, test_acc = train(
+            trial,
+            #model_config=model_config,
+            data_config=data_config,
+            log_dir=log_dir,
+            fp16=data_config["FP16"],
+            device=device,
+        )
+        return test_f1
 
+    study = optuna.create_study(directions=["maximize"])
+    study.optimize(objective, n_trials=100)
