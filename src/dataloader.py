@@ -9,6 +9,7 @@ import glob
 import os
 from typing import Any, Dict, List, Tuple, Union
 
+import numpy as np
 import torch
 import yaml
 from torch.utils.data import DataLoader, random_split
@@ -78,22 +79,29 @@ def get_dataset(
     )(dataset=dataset_name, img_size=img_size, **transform_test_params)
 
     label_weights = None
+    class ATransforms:
+        def __init__(self, transforms):
+            self.transforms = transforms
+
+        def __call__(self, img, *args, **kwargs):
+            return self.transforms(image=np.array(img))['image']
+
     # pytorch dataset
     if dataset_name == "TACO":
         train_path = os.path.join(data_path, "train")
         val_path = os.path.join(data_path, "val")
         test_path = os.path.join(data_path, "test")
 
-        train_dataset = ImageFolder(root=train_path, transform=transform_train)
-        val_dataset = ImageFolder(root=val_path, transform=transform_test)
-        test_dataset = ImageFolder(root=test_path, transform=transform_test)
+        train_dataset = ImageFolder(root=train_path, transform=ATransforms(transform_train))
+        val_dataset = ImageFolder(root=val_path, transform=ATransforms(transform_test))
+        test_dataset = ImageFolder(root=test_path, transform=ATransforms(transform_test))
 
     else:
         Dataset = getattr(
             __import__("torchvision.datasets", fromlist=[""]), dataset_name
         )
         train_dataset = Dataset(
-            root=data_path, train=True, download=True, transform=transform_train
+            root=data_path, train=True, download=True, transform=ATransforms(transform_train)
         )
         # from train dataset, train: 80%, val: 20%
         train_length = int(len(train_dataset) * (1.0-val_ratio))
@@ -101,7 +109,7 @@ def get_dataset(
             train_dataset, [train_length, len(train_dataset) - train_length]
         )
         test_dataset = Dataset(
-            root=data_path, train=False, download=False, transform=transform_test
+            root=data_path, train=False, download=False, transform=ATransforms(transform_test)
         )
     return train_dataset, val_dataset, test_dataset
 
@@ -119,7 +127,7 @@ def get_dataloader(
         pin_memory=(torch.cuda.is_available()),
         shuffle=True,
         batch_size=batch_size,
-        num_workers=10,
+        num_workers=8,
         drop_last=True
     )
     valid_loader = DataLoader(
@@ -127,13 +135,13 @@ def get_dataloader(
         pin_memory=(torch.cuda.is_available()),
         shuffle=False,
         batch_size=batch_size,
-        num_workers=5
+        num_workers=8
     )
     test_loader = DataLoader(
         dataset=test_dataset,
         pin_memory=(torch.cuda.is_available()),
         shuffle=False,
         batch_size=batch_size,
-        num_workers=5
+        num_workers=8
     )
     return train_loader, valid_loader, test_loader

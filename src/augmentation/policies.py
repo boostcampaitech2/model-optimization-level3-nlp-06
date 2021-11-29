@@ -11,6 +11,9 @@ import torchvision.transforms as transforms
 from src.augmentation.methods import RandAugmentation, SequentialAugmentation
 from src.augmentation.transforms import FILLCOLOR, SquarePad
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+
 DATASET_NORMALIZE_INFO = {
     "CIFAR10": {"MEAN": (0.4914, 0.4822, 0.4465), "STD": (0.2470, 0.2435, 0.2616)},
     "CIFAR100": {"MEAN": (0.5071, 0.4865, 0.4409), "STD": (0.2673, 0.2564, 0.2762)},
@@ -21,38 +24,33 @@ DATASET_NORMALIZE_INFO = {
 
 def simple_augment_train(
     dataset: str = "CIFAR10", img_size: float = 32
-) -> transforms.Compose:
-    """Simple data augmentation rule for training CIFAR100."""
-    return transforms.Compose(
-        [
-            SquarePad(),
-            transforms.Resize((int(img_size * 1.2), int(img_size * 1.2))),
-            transforms.RandomResizedCrop(
-                size=img_size, ratio=(0.75, 1.0, 1.3333333333333333)
-            ),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                DATASET_NORMALIZE_INFO[dataset]["MEAN"],
-                DATASET_NORMALIZE_INFO[dataset]["STD"],
-            ),
-        ]
-    )
-
+) -> A.Compose:
+    return A.Compose(
+                [
+                    A.LongestMaxSize(int(img_size * 1.2)),
+                    A.PadIfNeeded(int(img_size * 1.2), int(img_size * 1.2), border_mode=0),
+                    A.RandomCrop(img_size, img_size),
+                    A.HorizontalFlip(p=0.5),
+                    A.Normalize(    
+                        DATASET_NORMALIZE_INFO[dataset]["MEAN"],
+                        DATASET_NORMALIZE_INFO[dataset]["STD"],
+                    ),
+                    ToTensorV2(),
+                ])
 
 def simple_augment_test(
     dataset: str = "CIFAR10", img_size: float = 32
-) -> transforms.Compose:
+) -> A.Compose:
     """Simple data augmentation rule for testing CIFAR100."""
-    return transforms.Compose(
+    return A.Compose(
         [
-            SquarePad(),
-            transforms.Resize((img_size, img_size)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                DATASET_NORMALIZE_INFO[dataset]["MEAN"],
-                DATASET_NORMALIZE_INFO[dataset]["STD"],
-            ),
+            A.LongestMaxSize(img_size),
+            A.PadIfNeeded(img_size, img_size, border_mode=0),
+            A.Normalize(    
+                        DATASET_NORMALIZE_INFO[dataset]["MEAN"],
+                        DATASET_NORMALIZE_INFO[dataset]["STD"],
+                    ),
+            ToTensorV2(),
         ]
     )
 

@@ -8,7 +8,7 @@ import json
 import os
 import time
 from datetime import datetime
-
+import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
@@ -62,7 +62,14 @@ def get_dataloader(img_root: str, data_config: str) -> DataLoader:
         data_config["AUG_TEST"],
     )(dataset=data_config["DATASET"], img_size=data_config["IMG_SIZE"])
 
-    dataset = CustomImageFolder(root=img_root, transform=transform_test)
+    class ATransforms:
+        def __init__(self, transforms):
+            self.transforms = transforms
+
+        def __call__(self, img, *args, **kwargs):
+            return self.transforms(image=np.array(img))['image']
+
+    dataset = CustomImageFolder(root=img_root, transform=ATransforms(transform_test))
     dataloader = DataLoader(dataset=dataset, batch_size=1, num_workers=8)
     return dataloader
 
