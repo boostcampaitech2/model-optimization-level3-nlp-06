@@ -20,6 +20,8 @@ from src.trainer import TorchTrainer
 from src.utils.common import get_label_counts, read_yaml
 from src.utils.torch_utils import check_runtime, model_info
 
+import wandb
+wandb.login()
 
 def train(
     model_config: Dict[str, Any],
@@ -81,6 +83,7 @@ def train(
         verbose=1,
     )
     best_acc, best_f1 = trainer.train(
+        trial=0,
         train_dataloader=train_dl,
         n_epoch=data_config["EPOCHS"],
         val_dataloader=val_dl if val_dl else test_dl,
@@ -98,7 +101,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model.")
     parser.add_argument(
         "--model",
-        default="configs/model/mobilenetv3.yaml",
+        default="configs/model/example.yaml",
         type=str,
         help="model config",
     )
@@ -122,6 +125,13 @@ if __name__ == "__main__":
 
     os.makedirs(log_dir, exist_ok=True)
 
+    wandb.init(
+            project='lightweight_model', 
+            entity="boostcamp-nlp-06", 
+            tags=["train", "rand"],
+            group="Conv2Model_rand",
+            allow_val_change=True
+    )
     test_loss, test_f1, test_acc = train(
         model_config=model_config,
         data_config=data_config,
@@ -129,4 +139,5 @@ if __name__ == "__main__":
         fp16=data_config["FP16"],
         device=device,
     )
+    wandb.finish()
 

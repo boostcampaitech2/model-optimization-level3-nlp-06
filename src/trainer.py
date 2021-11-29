@@ -178,10 +178,12 @@ class TorchTrainer:
             test_loss, test_f1, test_acc = self.test(
                 model=self.model, test_dataloader=val_dataloader
             )
+            if trial:
+                trial.report(test_f1, epoch)
 
-            trial.report(test_f1, epoch)
-            if trial.should_prune():
-                raise optuna.exception.TrialPruned()
+            if trial:
+                if trial.should_prune():
+                    raise optuna.exceptions.TrialPruned()
 
             wandb.log({'lr': self.scheduler.get_lr()[0],  'valid_loss':test_loss, 'valid_f1':test_f1, 'valid_acc':test_acc})
             
