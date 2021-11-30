@@ -4,6 +4,8 @@
 """
 import os
 import optuna
+from datetime import datetime
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -415,6 +417,14 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
     params_nums = count_model_params(model)
 
     model_info(model, verbose=True)
+
+    # 새로운 학습 시작시 폴더를 옮겨주기
+    if os.path.isfile(LOG_PATH + '/best.pt'): 
+        modified = datetime.fromtimestamp(os.path.getmtime(LOG_PATH + '/best.pt'))
+        new_log_dir = os.path.dirname(LOG_PATH) + '/' + str(trial.number) + '_' + modified.strftime("%Y-%m-%d_%H-%M-%S")
+        os.rename(LOG_PATH, new_log_dir)
+        os.makedirs(LOG_PATH, exist_ok=True)
+    
     return f1_score, params_nums, mean_time
 
 
