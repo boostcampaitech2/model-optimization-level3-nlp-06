@@ -8,6 +8,7 @@ import os
 import shutil
 from typing import Optional, Tuple, Union
 
+import yaml
 import numpy as np
 import torch
 import torch.nn as nn
@@ -88,6 +89,9 @@ class TorchTrainer:
         scaler=None,
         device: torch.device = "cpu",
         verbose: int = 1,
+        log_dir=None,
+        data_config=None,
+        model_config=None,
     ) -> None:
         """Initialize TorchTrainer class.
 
@@ -107,6 +111,9 @@ class TorchTrainer:
         self.scaler = scaler
         self.verbose = verbose
         self.device = device
+        self.log_dir = log_dir
+        self.data_config = data_config
+        self.model_config = model_config
 
     def train(
         self,
@@ -179,6 +186,13 @@ class TorchTrainer:
                 continue
             best_test_acc = test_acc
             best_test_f1 = test_f1
+
+            if self.log_dir:
+                with open(os.path.join(self.log_dir, "data.yml"), "w") as f:
+                    yaml.dump(self.data_config, f, default_flow_style=False)
+                with open(os.path.join(self.log_dir, "model.yml"), "w") as f:
+                    yaml.dump(self.model_config, f, default_flow_style=False)
+                    
             print(f"Model saved. Current best test f1: {best_test_f1:.3f}")
             save_model(
                 model=self.model,

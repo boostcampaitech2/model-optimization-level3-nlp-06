@@ -2,6 +2,7 @@
 - Author: Junghoon Kim, Jongsun Shin
 - Contact: placidus36@gmail.com, shinn1897@makinarocks.ai
 """
+import os
 import optuna
 import torch
 import torch.nn as nn
@@ -15,10 +16,10 @@ from optuna.pruners import HyperbandPruner
 from subprocess import _args_from_interpreter_flags
 import argparse
 
-EPOCH = 50
 DATA_PATH = "../data"  # type your data path here that contains test, train and val directories
-RESULT_MODEL_PATH = "./result_model.pt" # result model will be saved in this path
-
+LOG_PATH = "./exp/latest"
+RESULT_MODEL_PATH = "./exp/latest/best.pt" # result model will be saved in this path
+os.makedirs(LOG_PATH, exist_ok=True)
 
 def search_hyperparam(trial: optuna.trial.Trial) -> Dict[str, Any]:
     """Search hyperparam from user-specified search space."""
@@ -406,6 +407,8 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
         device=device,
         verbose=1,
         model_path=RESULT_MODEL_PATH,
+        log_dir=LOG_PATH,
+        data_config=data_config
     )
     trainer.train(train_loader, hyperparams["EPOCHS"], val_dataloader=val_loader)
     loss, f1_score, acc_percent = trainer.test(model, test_dataloader=val_loader)
@@ -466,7 +469,7 @@ def tune(gpu_id, storage: str = None):
     wandbc = WeightsAndBiasesCallback(metric_name=["f1_score", "params_nums", "mean_time"], wandb_kwargs=wandb_kwargs)
     study = optuna.create_study(
         directions=["maximize", "minimize", "minimize"],
-        study_name="tune_7layer",
+        study_name="tuning",
         sampler=sampler,
         storage=rdb_storage,
         load_if_exists=True,
