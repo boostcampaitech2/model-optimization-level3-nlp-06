@@ -15,8 +15,8 @@ from optuna.pruners import HyperbandPruner
 from subprocess import _args_from_interpreter_flags
 import argparse
 
-EPOCH = 100
-DATA_PATH = "/opt/ml/input/data"  # type your data path here that contains test, train and val directories
+EPOCH = 50
+DATA_PATH = "../data"  # type your data path here that contains test, train and val directories
 RESULT_MODEL_PATH = "./result_model.pt" # result model will be saved in this path
 
 
@@ -25,7 +25,7 @@ def search_hyperparam(trial: optuna.trial.Trial) -> Dict[str, Any]:
     epochs = trial.suggest_int("epochs", low=50, high=50, step=50)
     img_size = trial.suggest_categorical("img_size", [96, 112, 168, 224])
     n_select = trial.suggest_int("n_select", low=0, high=6, step=2)
-    batch_size = trial.suggest_int("batch_size", low=16, high=32, step=16)
+    batch_size = trial.suggest_int("batch_size", low=32, high=128, step=32)
     return {
         "EPOCHS": epochs,
         "IMG_SIZE": img_size,
@@ -460,14 +460,18 @@ def tune(gpu_id, storage: str = None):
         rdb_storage = optuna.storages.RDBStorage(url=storage)
     else:
         rdb_storage = None
+
+    from optuna.integration import WeightsAndBiasesCallback
+    wandb_kwargs = {"project":'lightweight_model', "entity":"boostcamp-nlp-06", "tags":["AutoML"], "group":"optuna"}
+    wandbc = WeightsAndBiasesCallback(metric_name=["f1_score", "params_nums", "mean_time"], wandb_kwargs=wandb_kwargs)
     study = optuna.create_study(
         directions=["maximize", "minimize", "minimize"],
-        study_name="automl101",
+        study_name="tune_7layer",
         sampler=sampler,
         storage=rdb_storage,
         load_if_exists=True,
     )
-    study.optimize(lambda trial: objective(trial, device), n_trials=500)
+    study.optimize(lambda trial: objective(trial, device), n_trials=50, callbacks=[wandbc])
 
     pruned_trials = [
         t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED
@@ -497,6 +501,6 @@ def tune(gpu_id, storage: str = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Optuna tuner.")
     parser.add_argument("--gpu", default=0, type=int, help="GPU id to use")
-    parser.add_argument("--storage", default="", type=str, help="Optuna database storage path.")
+    parser.add_argument("--storage", default="postgresql://optuna:optuna@nuda.iptime.org:5432/study", type=str, help="Optuna database storage path.")
     args = parser.parse_args()
     tune(args.gpu, storage=args.storage if args.storage != "" else None)
