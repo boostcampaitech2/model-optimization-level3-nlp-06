@@ -28,7 +28,7 @@ def search_hyperparam(trial: optuna.trial.Trial) -> Dict[str, Any]:
     epochs = trial.suggest_int("epochs", low=50, high=50, step=50)
     img_size = trial.suggest_categorical("img_size", [96, 112, 168, 224])
     n_select = trial.suggest_int("n_select", low=0, high=6, step=2)
-    batch_size = trial.suggest_int("batch_size", low=32, high=128, step=32)
+    batch_size = trial.suggest_int("batch_size", low=16, high=32, step=16)
     return {
         "EPOCHS": epochs,
         "IMG_SIZE": img_size,
