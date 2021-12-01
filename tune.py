@@ -3,6 +3,7 @@
 - Contact: placidus36@gmail.com, shinn1897@makinarocks.ai
 """
 import os
+import yaml
 import optuna
 from datetime import datetime
 
@@ -365,9 +366,9 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
     model_config["backbone"], module_info = search_model(trial)
     hyperparams = search_hyperparam(trial)
 
-    model = Model(model_config, verbose=True)
-    model.to(device)
-    model.model.to(device)
+    model_instance = Model(model_config, verbose=True)
+    model_instance.to(device)
+    model_instance.model.to(device)
 
     # check ./data_configs/data.yaml for config information
     data_config: Dict[str, Any] = {}
@@ -384,15 +385,15 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
     data_config["IMG_SIZE"] = hyperparams["IMG_SIZE"]
 
     mean_time = check_runtime(
-        model.model,
+        model_instance.model,
         [model_config["input_channel"]] + model_config["INPUT_SIZE"],
         device,
     )
-    model_info(model, verbose=True)
+    model_info(model_instance, verbose=True)
     train_loader, val_loader, test_loader = create_dataloader(data_config)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    optimizer = torch.optim.SGD(model_instance.model.parameters(), lr=0.1, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=0.1,
@@ -401,22 +402,26 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
         pct_start=0.05,
     )
 
+    # 학습 시작전 모델 정보와 파라미터 정보 저장
+    with open(os.path.join(LOG_PATH, "data.yml"), "w") as f:
+        yaml.dump(data_config, f, default_flow_style=False)
+    with open(os.path.join(LOG_PATH, "model.yml"), "w") as f:
+        yaml.dump(model_config, f, default_flow_style=False)
+    
     trainer = TorchTrainer(
-        model,
+        model_instance.model,
         criterion,
         optimizer,
         scheduler,
         device=device,
         verbose=1,
-        model_path=RESULT_MODEL_PATH,
-        log_dir=LOG_PATH,
-        data_config=data_config
+        model_path=RESULT_MODEL_PATH
     )
     trainer.train(train_loader, hyperparams["EPOCHS"], val_dataloader=val_loader)
-    loss, f1_score, acc_percent = trainer.test(model, test_dataloader=val_loader)
-    params_nums = count_model_params(model)
+    loss, f1_score, acc_percent = trainer.test(model_instance.model, test_dataloader=val_loader)
+    params_nums = count_model_params(model_instance)
 
-    model_info(model, verbose=True)
+    model_info(model_instance, verbose=True)
 
     # 새로운 학습 시작시 폴더를 옮겨주기
     if os.path.isfile(LOG_PATH + '/best.pt'): 
@@ -424,7 +429,7 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
         new_log_dir = os.path.dirname(LOG_PATH) + '/' + str(trial.number) + '_' + modified.strftime("%Y-%m-%d_%H-%M-%S")
         os.rename(LOG_PATH, new_log_dir)
         os.makedirs(LOG_PATH, exist_ok=True)
-    
+
     return f1_score, params_nums, mean_time
 
 
