@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from src.augmentation.policies import simple_augment_test
 from src.model import Model
+from tune_timm import MyModel
 from src.utils.common import read_yaml
 
 if torch.__version__ >= "1.8.1":
@@ -172,7 +173,7 @@ if __name__ == "__main__":
     if args.weight.endswith("ts"):
         model = torch.jit.load(args.weight)
     else:
-        model_instance = Model(args.model_config, verbose=True)
+        model_instance = MyModel('efficientnet_b0', 6)
         model_instance.model.load_state_dict(
             torch.load(args.weight, map_location=torch.device("cpu"))
         )
