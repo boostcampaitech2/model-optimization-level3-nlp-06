@@ -1,0 +1,11 @@
+*.txt
+*.out
+
+wandb/
+exp/
+.ipynb_checkpoints/
+__pycache__/
+
+
+FashionMNIST/
+input/

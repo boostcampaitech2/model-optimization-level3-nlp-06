@@ -31,19 +31,20 @@ def train(
     device: torch.device,
 ) -> Tuple[float, float, float]:
     """Train."""
-    # save model_config, data_config
-    with open(os.path.join(log_dir, "data.yml"), "w") as f:
-        yaml.dump(data_config, f, default_flow_style=False)
-    with open(os.path.join(log_dir, "model.yml"), "w") as f:
-        yaml.dump(model_config, f, default_flow_style=False)
+    # # save model_config, data_config
+    # with open(os.path.join(log_dir, "data.yml"), "w") as f:
+    #     yaml.dump(data_config, f, default_flow_style=False)
+    # with open(os.path.join(log_dir, "model.yml"), "w") as f:
+    #     yaml.dump(model_config, f, default_flow_style=False)
 
     model_instance = Model(model_config, verbose=True)
     model_path = os.path.join(log_dir, "best.pt")
     print(f"Model save path: {model_path}")
     if os.path.isfile(model_path):
-        model_instance.model.load_state_dict(
+        model_instance.load_state_dict(
             torch.load(model_path, map_location=device)
         )
+    model_instance.to(device)
     model_instance.model.to(device)
 
     # Create dataloader
@@ -99,18 +100,19 @@ def train(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train model.")
-    parser.add_argument(  
+    parser.add_argument(
         "--model",
-        default="configs/model/mobilenetv3.yaml",
+        default="configs/model/example.yaml",
         type=str,
         help="model config",
     )
     parser.add_argument(
         "--data", default="configs/data/taco.yaml", type=str, help="data config"
     )
+    parser.add_argument("--model_dir", type=str, help="Saved model root directory which includes 'best.pt', 'data.yml', and, 'model.yml'", default='/opt/ml/code/exp/latest')
     args = parser.parse_args()
 
-    model_config = read_yaml(cfg=args.model)
+    model_config = os.path.join(args.model_dir, "model.yml")
     data_config = read_yaml(cfg=args.data)
 
     data_config["DATA_PATH"] = os.environ.get("SM_CHANNEL_TRAIN", data_config["DATA_PATH"])
@@ -118,12 +120,12 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     log_dir = os.environ.get("SM_MODEL_DIR", os.path.join("exp", 'latest'))
 
-    if os.path.exists(log_dir): 
-        modified = datetime.fromtimestamp(os.path.getmtime(log_dir + '/best.pt'))
-        new_log_dir = os.path.dirname(log_dir) + '/' + modified.strftime("%Y-%m-%d_%H-%M-%S")
-        os.rename(log_dir, new_log_dir)
+    # if os.path.exists(log_dir): 
+    #     modified = datetime.fromtimestamp(os.path.getmtime(log_dir + '/best.pt'))
+    #     new_log_dir = os.path.dirname(log_dir) + '/' + modified.strftime("%Y-%m-%d_%H-%M-%S")
+    #     os.rename(log_dir, new_log_dir)
 
-    os.makedirs(log_dir, exist_ok=True)
+    # os.makedirs(log_dir, exist_ok=True)
 
     wandb.init(
             project='lightweight_model', 

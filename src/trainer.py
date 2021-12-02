@@ -8,6 +8,7 @@ import os
 import shutil
 from typing import Optional, Tuple, Union
 
+import wandb
 import numpy as np
 import torch
 import torch.nn as nn
@@ -88,6 +89,7 @@ class TorchTrainer:
         scaler=None,
         device: torch.device = "cpu",
         verbose: int = 1,
+        wandb=None,
     ) -> None:
         """Initialize TorchTrainer class.
 
@@ -107,6 +109,7 @@ class TorchTrainer:
         self.scaler = scaler
         self.verbose = verbose
         self.device = device
+        self.wandb = wandb
 
     def train(
         self,
@@ -172,13 +175,16 @@ class TorchTrainer:
                 )
             pbar.close()
 
-            _, test_f1, test_acc = self.test(
+            test_loss, test_f1, test_acc = self.test(
                 model=self.model, test_dataloader=val_dataloader
             )
+            if self.wandb:
+                wandb.log({'lr': self.scheduler.get_lr()[0],  'valid_loss':test_loss, 'valid_f1':test_f1, 'valid_acc':test_acc})
             if best_test_f1 > test_f1:
                 continue
             best_test_acc = test_acc
             best_test_f1 = test_f1
+
             print(f"Model saved. Current best test f1: {best_test_f1:.3f}")
             save_model(
                 model=self.model,
