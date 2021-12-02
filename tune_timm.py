@@ -6,6 +6,8 @@ import os
 import yaml
 import optuna
 from datetime import datetime
+import numpy as np
+import timm
 
 import torch
 import torch.nn as nn
@@ -18,6 +20,7 @@ from typing import Any, Dict, List, Tuple
 from optuna.pruners import HyperbandPruner
 from subprocess import _args_from_interpreter_flags
 import argparse
+
 
 DATA_PATH = "../data"  # type your data path here that contains test, train and val directories
 LOG_PATH = "./exp/latest"
@@ -37,129 +40,21 @@ def search_hyperparam(trial: optuna.trial.Trial) -> Dict[str, Any]:
         "BATCH_SIZE": batch_size,
     }
 
+class MyModel(nn.Module):
+    def __init__(self, model_name, num_classes):
+        super(MyModel, self).__init__()
+        self.num_classes = num_classes
+        self.model = timm.create_model(model_name, pretrained=True)
 
-def search_model(trial: optuna.trial.Trial) -> List[Any]:
-    """Search model structure from user-specified search space."""
-    model = []
-    n_stride = 0
-    MAX_NUM_STRIDE = 5
-    UPPER_STRIDE = 2  # 5(224 example): 224, 112, 56, 28, 14, 7
+        n_features = self.model.classifier.in_features
+        self.model.classifier = torch.nn.Linear(in_features=n_features, out_features=num_classes, bias=True)
+        torch.nn.init.xavier_uniform_(self.model.classifier.weight)
+        stdv = 1/np.sqrt(self.num_classes)
+        self.model.classifier.bias.data.uniform_(-stdv, stdv)
+        
+    def forward(self, x):
+        return self.model(x)
 
-    # Module 1
-    m1 = trial.suggest_categorical("m1", ["Conv", "DWConv"])
-    m1_args = []
-    m1_repeat = trial.suggest_int("m1/repeat", 1, 3)
-    m1_out_channel = trial.suggest_int("m1/out_channels", low=16, high=64, step=16)
-    m1_stride = trial.suggest_int("m1/stride", low=1, high=UPPER_STRIDE)
-    if m1_stride == 2:
-        n_stride += 1
-    m1_activation = trial.suggest_categorical("m1/activation", ["ReLU", "Hardswish"])
-    if m1 == "Conv":
-        # Conv args: [out_channel, kernel_size, stride, padding, groups, activation]
-        m1_args = [m1_out_channel, 3, m1_stride, None, 1, m1_activation]
-    elif m1 == "DWConv":
-        # DWConv args: [out_channel, kernel_size, stride, padding_size, activation]
-        m1_args = [m1_out_channel, 3, m1_stride, None, m1_activation]
-    model.append([m1_repeat, m1, m1_args])
-
-    # Module 2
-    m2 = trial.suggest_categorical(
-        "m2", ["Conv", "DWConv", "InvertedResidualv2", "InvertedResidualv3", "Pass"]
-    )
-    m2_args = []
-    m2_repeat = trial.suggest_int("m2/repeat", 1, 5)
-    m2_out_channel = trial.suggest_int("m2/out_channels", low=16, high=128, step=16)
-    m2_stride = trial.suggest_int("m2/stride", low=1, high=UPPER_STRIDE)
-    # force stride m2
-    if n_stride == 0:
-        m2_stride = 2
-    if m2 == "Conv":
-        # Conv args: [out_channel, kernel_size, stride, padding, groups, activation]
-        m2_kernel = trial.suggest_int("m2/kernel_size", low=1, high=5, step=2)
-        m2_activation = trial.suggest_categorical(
-            "m2/activation", ["ReLU", "Hardswish"]
-        )
-        m2_args = [m2_out_channel, m2_kernel, m2_stride, None, 1, m2_activation]
-    elif m2 == "DWConv":
-        # DWConv args: [out_channel, kernel_size, stride, padding_size, activation]
-        m2_kernel = trial.suggest_int("m2/kernel_size", low=1, high=5, step=2)
-        m2_activation = trial.suggest_categorical(
-            "m2/activation", ["ReLU", "Hardswish"]
-        )
-        m2_args = [m2_out_channel, m2_kernel, m2_stride, None, m2_activation]
-    elif m2 == "InvertedResidualv2":
-        m2_c = trial.suggest_int("m2/v2_c", low=16, high=32, step=16)
-        m2_t = trial.suggest_int("m2/v2_t", low=1, high=4)
-        m2_args = [m2_c, m2_t, m2_stride]
-    elif m2 == "InvertedResidualv3":
-        m2_kernel = trial.suggest_int("m2/kernel_size", low=3, high=5, step=2)
-        m2_t = round(trial.suggest_float("m2/v3_t", low=1.0, high=6.0, step=0.1), 1)
-        m2_c = trial.suggest_int("m2/v3_c", low=16, high=40, step=8)
-        m2_se = trial.suggest_categorical("m2/v3_se", [0, 1])
-        m2_hs = trial.suggest_categorical("m2/v3_hs", [0, 1])
-        # k t c SE HS s
-        m2_args = [m2_kernel, m2_t, m2_c, m2_se, m2_hs, m2_stride]
-    if not m2 == "Pass":
-        if m2_stride == 2:
-            n_stride += 1
-            if n_stride >= MAX_NUM_STRIDE:
-                UPPER_STRIDE = 1
-        model.append([m2_repeat, m2, m2_args])
-
-    # Module 3
-    m3 = trial.suggest_categorical(
-        "m3", ["Conv", "DWConv", "InvertedResidualv2", "InvertedResidualv3", "Pass"]
-    )
-    m3_args = []
-    m3_repeat = trial.suggest_int("m3/repeat", 1, 5)
-    m3_stride = trial.suggest_int("m3/stride", low=1, high=UPPER_STRIDE)
-    if m3 == "Conv":
-        # Conv args: [out_channel, kernel_size, stride, padding, groups, activation]
-        m3_out_channel = trial.suggest_int("m3/out_channels", low=16, high=128, step=16)
-        m3_kernel = trial.suggest_int("m3/kernel_size", low=1, high=5, step=2)
-        m3_activation = trial.suggest_categorical(
-            "m3/activation", ["ReLU", "Hardswish"]
-        )
-        m3_args = [m3_out_channel, m3_kernel, m3_stride, None, 1, m3_activation]
-    elif m3 == "DWConv":
-        # DWConv args: [out_channel, kernel_size, stride, padding_size, activation]
-        m3_out_channel = trial.suggest_int("m3/out_channels", low=16, high=128, step=16)
-        m3_kernel = trial.suggest_int("m3/kernel_size", low=1, high=5, step=2)
-        m3_activation = trial.suggest_categorical(
-            "m3/activation", ["ReLU", "Hardswish"]
-        )
-        m3_args = [m3_out_channel, m3_kernel, m3_stride, None, m3_activation]
-    elif m3 == "InvertedResidualv2":
-        m3_c = trial.suggest_int("m3/v2_c", low=8, high=32, step=8)
-        m3_t = trial.suggest_int("m3/v2_t", low=1, high=8)
-        m3_args = [m3_c, m3_t, m3_stride]
-    elif m3 == "InvertedResidualv3":
-        m3_kernel = trial.suggest_int("m3/kernel_size", low=3, high=5, step=2)
-        m3_t = round(trial.suggest_float("m3/v3_t", low=1.0, high=6.0, step=0.1), 1)
-        m3_c = trial.suggest_int("m3/v3_c", low=8, high=40, step=8)
-        m3_se = trial.suggest_categorical("m3/v3_se", [0, 1])
-        m3_hs = trial.suggest_categorical("m3/v3_hs", [0, 1])
-        m3_args = [m3_kernel, m3_t, m3_c, m3_se, m3_hs, m3_stride]
-    if not m3 == "Pass":
-        if m3_stride == 2:
-            n_stride += 1
-            if n_stride >= MAX_NUM_STRIDE:
-                UPPER_STRIDE = 1
-        model.append([m3_repeat, m3, m3_args])
-
-    # last layer
-    last_dim = trial.suggest_int("last_dim", low=128, high=1024, step=128)
-    # We can setup fixed structure as well
-    model.append([1, "Conv", [last_dim, 1, 1]])
-    model.append([1, "GlobalAvgPool", []])
-    model.append([1, "FixedConv", [6, 1, 1, None, 1, None]])
-
-    module_info = {}
-    module_info["m1"] = {"type": m1, "repeat": m1_repeat, "stride": m1_stride}
-    module_info["m2"] = {"type": m2, "repeat": m2_repeat, "stride": m2_stride}
-    module_info["m3"] = {"type": m3, "repeat": m3_repeat, "stride": m3_stride}
-
-    return model, module_info
 
 
 def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
@@ -181,10 +76,10 @@ def objective(trial: optuna.trial.Trial, device) -> Tuple[float, int, float]:
     model_config["width_multiple"] = trial.suggest_categorical(
         "width_multiple", [0.25, 0.5, 0.75, 1.0]
     )
-    model_config["backbone"], module_info = search_model(trial)
+    #model_config["backbone"], module_info = search_model(trial)
     hyperparams = search_hyperparam(trial)
 
-    model_instance = Model(model_config, verbose=True)
+    model_instance = MyModel('efficientnet_b0', 6)# Model(model_config, verbose=True)
     model_instance.to(device)
     model_instance.model.to(device)
 
@@ -302,7 +197,7 @@ def tune(gpu_id, storage: str = None):
     wandbc = WeightsAndBiasesCallback(metric_name=["f1_score", "params_nums", "mean_time"], wandb_kwargs=wandb_kwargs)
     study = optuna.create_study(
         directions=["maximize", "minimize", "minimize"],
-        study_name="tuning",
+        study_name="tuning_eff_b0",
         sampler=sampler,
         storage=rdb_storage,
         load_if_exists=True,
