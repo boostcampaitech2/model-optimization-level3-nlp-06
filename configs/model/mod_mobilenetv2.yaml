@@ -1,0 +1,23 @@
+input_channel: 3
+
+depth_multiple: 1.0
+width_multiple: 1.0
+
+backbone:
+    # Example model in PyTorch Tutorial (https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html)
+    # [repeat, module, args]
+    [
+        # n(반복수), ,[c(채널 수) ,t(블록 내부에서 팽창 시킬 배수), s(stride)]
+        [1, Conv, [32, 3, 2]],
+        [1, InvertedResidualv2,[16, 1, 1]],
+        [1, InvertedResidualv2,[24, 6, 2]],
+        [1, InvertedResidualv2,[32, 6, 2]],
+        [1, InvertedResidualv2,[64, 6, 2]],
+        [1, InvertedResidualv2,[96, 6, 1]],
+        [1, InvertedResidualv2,[160, 6, 2]],
+        [1, InvertedResidualv2,[320, 6, 1]],
+        [1, Conv, [1280, 1, 1]],
+        [1, GlobalAvgPool, []],
+        [1, Conv, [1000, 1, 1, null, 1, null]],
+
+    ]
